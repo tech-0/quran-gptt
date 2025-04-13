@@ -1,0 +1,6 @@
+Flask
+pandas
+requests
+openpyxl
+Pillow
+markupsafe
