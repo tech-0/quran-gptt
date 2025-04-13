@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ku">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>جیهانی فەرموودە</title>
+    <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+    <h2>📚 کۆمەڵەی فەرموودە</h2>
+
+    <!-- 🔍 Search Form -->
+    <form method="get" action="/hadith">
+        <input type="text" name="query" placeholder="گەڕان بە وشەیەک..." value="{{ request.args.get('query', '') }}">
+        <button type="submit">گەڕان</button>
+    </form>
+
+    {% if hadiths %}
+        {% for h in hadiths %}
+            <div class="hadith-box">
+                <h3>📜 فەرموودەی ژمارە : {{ h.id }}</h3>
+                <strong><b style="color: red;">عەرەبی :</b> {{ h.hadith_ar }}</strong><br><br>
+                <p><b style="color: red;">کوردی :</b> {{ h.hadith_ku }}</p><br>
+                <p><b style="color: red;">سەحیح :</b> {{ h.hadith_sahih }}</p><br>
+                <p><b style="color: red;">گێرانەوە :</b> {{ h.hadith_geranawa }}</p><br>
+                <p><b style="color: red;">ژمارەی فەرموودە :</b> {{ h.hadith_id }}</p>
+            </div>
+        {% endfor %}
+    {% else %}
+        <p style="color: gray;">هیچ فەرموودەیەک نەدۆزرایەوە.</p>
+    {% endif %}
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Quran</title>
+    <link rel="stylesheet" href="/static/style.css">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+    <h2>تەفسیری قورئان لە رێگای ئایەت</h2>
+    <select id="surah">
+        {% for s in surahs %}
+            <option value="{{ s.number }}">{{ s.number }} - {{ s.name }}</option>
+        {% endfor %}
+    </select>
+    <input type="number" id="ayah" placeholder="Ayah number">
+    <button onclick="getAyah()">گەران</button>
+
+    <div id="result"></div>
+
+    <script>
+    function getAyah() {
+        const surah = document.getElementById("surah").value;
+        const ayah = document.getElementById("ayah").value;
+        fetch("/ayah", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ surah, ayah })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.error) return alert(data.error);
+            document.getElementById("result").innerHTML = `
+                <h3>📖 Ayah</h3>
+                <font style="text-align: justify; line-height: 2.2rem;"><b>عەرەبی :</b> ${data.arabic}</font><br><br>
+                <p style="text-align: justify; line-height: 2.2rem;"><b>تەفسیری کوردی :</b> ${data.kurdish}</p><br>
+                <audio controls src="${data.audio}"></audio>
+            `;
+        });
+    }
+    </script>
+</body>
+</html>
