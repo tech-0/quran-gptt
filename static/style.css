@@ -90,6 +90,7 @@ button {
   color: white;
   font-size: 16px;
   border: none;
+	font-family: 'K24KurdishBold-Bold';
   border-radius: 8px;
   cursor: pointer;
   transition: background-color 0.3s, transform 0.1s;
