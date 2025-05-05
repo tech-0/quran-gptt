@@ -1,13 +1,17 @@
 import os
 import requests
 import pandas as pd
-from flask import Flask, render_template, request, jsonify
+from flask import Flask
+from threading import Thread
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.constants import ParseMode
+from telegram.ext import ContextTypes
+from telegram.helpers import escape_markdown
+from io import BytesIO
 from PIL import ImageFont
-import html
-import re
-from markupsafe import Markup
 
-app = Flask(__name__)
+# Load Hadith Data
 hadith_data = pd.read_excel("hadith.xlsx")
 
 # Load Quran font
@@ -17,76 +21,173 @@ try:
 except IOError:
     font = ImageFont.load_default()
 
-def escape_html(text):
-    return html.escape(str(text))
+# Telegram Bot Token
+TELEGRAM_API_TOKEN = '7476023842:AAFyYp9fkQ5zXyJ7DXvXfj0TSg974q5q6O0'
 
+# Flask for Keep Alive
+app = Flask(__name__)
+@app.route('/')
+def home():
+    return "Bot is alive!"
+Thread(target=lambda: app.run(host='0.0.0.0', port=8080)).start()
+
+# Get Surahs
 def get_surahs():
     url = "https://api.alquran.cloud/v1/surah"
     response = requests.get(url)
     if response.status_code == 200:
-        return response.json()['data']
+        data = response.json()
+        return [{'id': s['number'], 'name': s['name'], 'ayah_count': s['numberOfAyahs']} for s in data['data']]
     return []
 
-@app.route('/')
-def index():
-    return render_template("index.html")
-
-@app.route('/quran')
-def quran():
+# Surah Keyboard
+def get_surah_keyboard(page=1, per_page=50):
     surahs = get_surahs()
-    return render_template("quran.html", surahs=surahs)
+    start, end = (page - 1) * per_page, min(page * per_page, len(surahs))
+    keyboard = [[InlineKeyboardButton(f"{s['id']}: {s['name']}", callback_data=f"surah-{s['id']}")] for s in surahs[start:end]]
+    nav = []
+    if page > 1:
+        nav.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"page-{page - 1}"))
+    if end < len(surahs):
+        nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"page-{page + 1}"))
+    if nav:
+        keyboard.append(nav)
+    return InlineKeyboardMarkup(keyboard)
 
-@app.route('/ayah', methods=['POST'])
-def ayah():
-    surah = request.json.get('surah')
-    ayah = request.json.get('ayah')
+# Ayah Keyboard
+def get_ayah_keyboard(surah, total, page=1, per_page=50):
+    start, end = (page - 1) * per_page + 1, min(page * per_page, total)
+    keyboard = [[InlineKeyboardButton(f"Ayah {i}", callback_data=f"ayah-{surah}-{i}")] for i in range(start, end + 1)]
+    nav = []
+    if start > 1:
+        nav.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"ayahpage-{surah}-{page - 1}"))
+    if end < total:
+        nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"ayahpage-{surah}-{page + 1}"))
+    if nav:
+        keyboard.append(nav)
+    return InlineKeyboardMarkup(keyboard)
+
+# Main Menu
+def get_main_menu():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📖 Quran", callback_data="menu-quran"),
+         InlineKeyboardButton("🕌 Hadith", callback_data="menu-hadith")]
+    ])
+
+# Command Handlers
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Welcome! Choose an option:", reply_markup=get_main_menu())
+
+async def home(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Welcome back! Choose an option:", reply_markup=get_main_menu())
+
+async def quran(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("You selected Quran! Choose a Surah:", reply_markup=get_surah_keyboard())
+
+async def hadith(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [[InlineKeyboardButton(f"Hadith {i}", callback_data=f"hadith-{i}")] for i in hadith_data['id']]
+    await update.message.reply_text("You selected Hadith! Choose a Hadith:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+# Menu Handler
+async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.data == "menu-quran":
+        await query.edit_message_text("Select a Surah:", reply_markup=get_surah_keyboard())
+    elif query.data == "menu-hadith":
+        keyboard = [[InlineKeyboardButton(f"Hadith {i}", callback_data=f"hadith-{i}")] for i in hadith_data['id']]
+        await query.edit_message_text("Select a Hadith:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+# Hadith Details
+async def handle_hadith(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    h_id = int(query.data.split('-')[1])
+    h = hadith_data[hadith_data['id'] == h_id].iloc[0]
+    message = f"📜 *Hadith {h['id']}*\n\n*Arabic:*\n{h['hadith_ar']}\n\n*Kurdish:*\n{h['hadith_ku']}\n\n*Sahih:* {h['hadith_sahih']}\n*Explanation:* {h['hadith_geranawa']}"
+    await query.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
+
+# Surah Selection
+async def handle_surah_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    page = int(query.data.split('-')[1])
+    await query.edit_message_text("Select a Surah:", reply_markup=get_surah_keyboard(page))
+
+async def handle_select_surah(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    surah_id = int(query.data.split('-')[1])
+    context.user_data['surah'] = surah_id
+    surahs = get_surahs()
+    surah = next(s for s in surahs if s['id'] == surah_id)
+    await query.message.reply_text(f"Surah {surah['name']} selected. Now select an Ayah:", reply_markup=get_ayah_keyboard(surah_id, surah['ayah_count']))
+
+async def handle_ayah_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    _, surah, page = query.data.split('-')
+    surah = int(surah)
+    page = int(page)
+    surahs = get_surahs()
+    selected = next(s for s in surahs if s['id'] == surah)
+    await query.message.edit_text(f"Surah {selected['name']} selected. Now select an Ayah:", reply_markup=get_ayah_keyboard(surah, selected['ayah_count'], page))
+
+# Fetch Ayah
+async def fetch_ayah(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    _, surah, ayah = query.data.split('-')
+    surah, ayah = int(surah), int(ayah)
 
     try:
+        # Fetch Arabic text
         arabic_url = f"https://api.alquran.cloud/v1/ayah/{surah}:{ayah}/ar"
-        arabic_text = requests.get(arabic_url).json()['data']['text']
+        arabic_response = requests.get(arabic_url)
+        arabic_response.raise_for_status()
+        arabic_data = arabic_response.json()
+        arabic_text = arabic_data['data']['text']
 
-        kurdish_url = f"https://quranenc.com/api/v1/translation/aya/kurdish_salahuddin/{surah}/{ayah}"
-        kurdish_text = requests.get(kurdish_url).json()['result']['translation']
+        # Fetch Kurdish translation
+        kurdish_url = f"https://quranenc.com/api/v1/translation/aya/kurdish_mokhtasar/{surah}/{ayah}"
+        kurdish_response = requests.get(kurdish_url)
+        kurdish_response.raise_for_status()
+        kurdish_data = kurdish_response.json()
+        kurdish_text = kurdish_data['result']['translation']
 
-        audio_url = f"https://everyayah.com/data/Alafasy_64kbps/{str(surah).zfill(3)}{str(ayah).zfill(3)}.mp3"
+        # Prepare and send message
+        message = f"📖 *Surah {surah}, Ayah {ayah}*\n\n"
+        message += f"*Arabic:*\n{arabic_text}\n\n"
+        message += f"*Kurdish:*\n{kurdish_text}"
+        
+        await query.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
 
-        return jsonify({
-            "arabic": escape_html(arabic_text),
-            "kurdish": escape_html(kurdish_text),
-            "audio": audio_url
-        })
+        # Send audio (optional)
+        surah_str = str(surah).zfill(3)
+        ayah_str = str(ayah).zfill(3)
+        audio_url = f"https://everyayah.com/data/Alafasy_64kbps/{surah_str}{ayah_str}.mp3"
+        await query.message.reply_voice(audio_url, caption=f"🎧 Surah {surah}, Ayah {ayah}")
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print("Error:", e)
+        await query.message.reply_text("❌ Failed to fetch Ayah.")
 
 
-@app.route('/hadith')
-def hadith():
-    query = request.args.get('query', '').strip()
-    if query:
-        def highlight(text):
-            pattern = re.compile(re.escape(query), re.IGNORECASE)
-            return Markup(pattern.sub(
-                lambda m: f"<span style='color:red; font-weight:bold;'>{m.group(0)}</span>",
-                str(text)
-            ))
-
-        filtered = hadith_data[
-            hadith_data['hadith_ar'].astype(str).str.contains(query, case=False, na=False) |
-            hadith_data['hadith_ku'].astype(str).str.contains(query, case=False, na=False) |
-            hadith_data['hadith_geranawa'].astype(str).str.contains(query, case=False, na=False) |
-            hadith_data['hadith_id'].astype(str).str.contains(query, case=False, na=False)
-        ].copy()
-
-        filtered['hadith_ar'] = filtered['hadith_ar'].apply(highlight)
-        filtered['hadith_ku'] = filtered['hadith_ku'].apply(highlight)
-        filtered['hadith_geranawa'] = filtered['hadith_geranawa'].apply(highlight)
-        filtered['hadith_id'] = filtered['hadith_id'].apply(highlight)
-    else:
-        filtered = hadith_data.copy()
-
-    return render_template("hadith.html", hadiths=filtered.to_dict(orient="records"), query=query)
-
-
+# Run Bot
 if __name__ == '__main__':
-    app.run(debug=True)
+    app_telegram = Application.builder().token(TELEGRAM_API_TOKEN).build()
+
+    app_telegram.add_handler(CommandHandler("start", start))
+    app_telegram.add_handler(CommandHandler("home", home))
+    app_telegram.add_handler(CommandHandler("quran", quran))
+    app_telegram.add_handler(CommandHandler("hadith", hadith))
+
+    app_telegram.add_handler(CallbackQueryHandler(handle_menu, pattern=r"^menu-.*$"))
+    app_telegram.add_handler(CallbackQueryHandler(handle_hadith, pattern=r"^hadith-\d+$"))
+    app_telegram.add_handler(CallbackQueryHandler(handle_surah_page, pattern=r"^page-\d+$"))
+    app_telegram.add_handler(CallbackQueryHandler(handle_select_surah, pattern=r"^surah-\d+$"))
+    app_telegram.add_handler(CallbackQueryHandler(handle_ayah_page, pattern=r"^ayahpage-\d+-\d+$"))
+    app_telegram.add_handler(CallbackQueryHandler(fetch_ayah, pattern=r"^ayah-\d+-\d+$"))
+
+    print("Bot is running...")
+    app_telegram.run_polling()
