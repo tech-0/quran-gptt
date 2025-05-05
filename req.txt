@@ -1,6 +1,6 @@
-Flask
+flask
 pandas
 requests
-openpyxl
 Pillow
-markupsafe
+openpyxl
+python-telegram-bot==20.7
