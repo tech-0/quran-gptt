@@ -24,14 +24,14 @@ except IOError:
 # Telegram Bot Token
 TELEGRAM_API_TOKEN = '7476023842:AAFyYp9fkQ5zXyJ7DXvXfj0TSg974q5q6O0'
 
-# Flask for Keep Alive
+# Flask Keep Alive
 app = Flask(__name__)
 @app.route('/')
 def home():
     return "Bot is alive!"
 Thread(target=lambda: app.run(host='0.0.0.0', port=8080)).start()
 
-# Get Surahs
+# Get Surahs from API
 def get_surahs():
     url = "https://api.alquran.cloud/v1/surah"
     response = requests.get(url)
@@ -107,13 +107,14 @@ async def handle_hadith(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = f"📜 *Hadith {h['id']}*\n\n*Arabic:*\n{h['hadith_ar']}\n\n*Kurdish:*\n{h['hadith_ku']}\n\n*Sahih:* {h['hadith_sahih']}\n*Explanation:* {h['hadith_geranawa']}"
     await query.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
 
-# Surah Selection
+# Surah Pagination
 async def handle_surah_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     page = int(query.data.split('-')[1])
     await query.edit_message_text("Select a Surah:", reply_markup=get_surah_keyboard(page))
 
+# Surah Selection
 async def handle_select_surah(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -123,6 +124,7 @@ async def handle_select_surah(update: Update, context: ContextTypes.DEFAULT_TYPE
     surah = next(s for s in surahs if s['id'] == surah_id)
     await query.message.reply_text(f"Surah {surah['name']} selected. Now select an Ayah:", reply_markup=get_ayah_keyboard(surah_id, surah['ayah_count']))
 
+# Ayah Page Handler
 async def handle_ayah_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -133,55 +135,52 @@ async def handle_ayah_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
     selected = next(s for s in surahs if s['id'] == surah)
     await query.message.edit_text(f"Surah {selected['name']} selected. Now select an Ayah:", reply_markup=get_ayah_keyboard(surah, selected['ayah_count'], page))
 
-# Fetch Ayah
+# Fetch Ayah Handler
 async def fetch_ayah(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    await query.answer()  # IMPORTANT: answer first to avoid timeout
+
     _, surah, ayah = query.data.split('-')
     surah, ayah = int(surah), int(ayah)
 
     try:
-        # Fetch Arabic text
+        # Arabic
         arabic_url = f"https://api.alquran.cloud/v1/ayah/{surah}:{ayah}/ar"
         arabic_response = requests.get(arabic_url)
         arabic_response.raise_for_status()
-        arabic_data = arabic_response.json()
-        arabic_text = arabic_data['data']['text']
+        arabic_text = arabic_response.json()['data']['text']
 
-        # Fetch Kurdish translation
-        kurdish_url = f"https://quranenc.com/api/v1/translation/aya/kurdish_mokhtasar/{surah}/{ayah}"
+        # Kurdish (Asan)
+        kurdish_url = f"https://api.alquran.cloud/v1/ayah/{surah}:{ayah}/ku.asan"
         kurdish_response = requests.get(kurdish_url)
         kurdish_response.raise_for_status()
-        kurdish_data = kurdish_response.json()
-        kurdish_text = kurdish_data['result']['translation']
+        kurdish_text = kurdish_response.json()['data']['text']
 
-        # Prepare and send message
-        message = f"📖 *Surah {surah}, Ayah {ayah}*\n\n"
-        message += f"*Arabic:*\n{arabic_text}\n\n"
-        message += f"*Kurdish:*\n{kurdish_text}"
-        
+        # Reply text
+        message = f"📖 *Surah {surah}, Ayah {ayah}*\n\n*Arabic:*\n{arabic_text}\n\n*Kurdish:*\n{kurdish_text}"
         await query.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
 
-        # Send audio (optional)
+        # Audio
         surah_str = str(surah).zfill(3)
         ayah_str = str(ayah).zfill(3)
-        audio_url = f"https://everyayah.com/data/Alafasy_64kbps/{surah_str}{ayah_str}.mp3"
+        audio_url = f"https://everyayah.com/data/Yasser_Ad-Dussary_128kbps/{surah_str}{ayah_str}.mp3"
         await query.message.reply_voice(audio_url, caption=f"🎧 Surah {surah}, Ayah {ayah}")
 
     except Exception as e:
         print("Error:", e)
         await query.message.reply_text("❌ Failed to fetch Ayah.")
 
-
-# Run Bot
+# Run the Bot
 if __name__ == '__main__':
     app_telegram = Application.builder().token(TELEGRAM_API_TOKEN).build()
 
+    # Commands
     app_telegram.add_handler(CommandHandler("start", start))
     app_telegram.add_handler(CommandHandler("home", home))
     app_telegram.add_handler(CommandHandler("quran", quran))
     app_telegram.add_handler(CommandHandler("hadith", hadith))
 
+    # Callback Query Handlers
     app_telegram.add_handler(CallbackQueryHandler(handle_menu, pattern=r"^menu-.*$"))
     app_telegram.add_handler(CallbackQueryHandler(handle_hadith, pattern=r"^hadith-\d+$"))
     app_telegram.add_handler(CallbackQueryHandler(handle_surah_page, pattern=r"^page-\d+$"))
@@ -189,5 +188,5 @@ if __name__ == '__main__':
     app_telegram.add_handler(CallbackQueryHandler(handle_ayah_page, pattern=r"^ayahpage-\d+-\d+$"))
     app_telegram.add_handler(CallbackQueryHandler(fetch_ayah, pattern=r"^ayah-\d+-\d+$"))
 
-    print("Bot is running...")
+    print("✅ Bot is running...")
     app_telegram.run_polling()
