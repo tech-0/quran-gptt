@@ -1,33 +1,34 @@
 <!DOCTYPE html>
-<html lang="en" dir="rtl">
+<html lang="ku" dir="rtl">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Quran & Hadith App</title>
-  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-   <style>
+
+  <!-- External CSS -->
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- Kurdish Font -->
+  <style>
     @font-face {
       font-family: 'K24KurdishBold-Bold';
       src: url('fonts/K24KurdishBold-Bold.woff') format('woff');
-      font-weight: normal;
-      font-style: normal;
     }
-
     * {
-      font-family: 'K24KurdishBold-Bold', sans-serif;
+      font-family: 'K24KurdishBold-Bold';
     }
   </style>
 </head>
-<body class="bg-gray-100 font-sans text-gray-800">
-  <div class="container mx-auto p-6">
-    <h1 class="text-center text-4xl text-teal-600 font-semibold mb-10">📚 Quran & Hadith</h1>
+<body>
+  <div class="wrapper">
+    <h1>📚 Quran & Hadith</h1>
 
-    <div id="main-menu" class="flex justify-center gap-6 mb-8">
-      <button onclick="showQuran()" class="bg-blue-500 text-white py-3 px-6 rounded-lg text-lg hover:bg-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-300 transform hover:scale-105 transition">📖 Quran</button>
-      <button onclick="showHadith()" class="bg-green-500 text-white py-3 px-6 rounded-lg text-lg hover:bg-green-400 focus:outline-none focus:ring-2 focus:ring-green-300 transform hover:scale-105 transition">🕌 Hadith</button>
+    <div id="main-menu">
+      <button onclick="showQuran()">📖 قورئان</button>
+      <button onclick="showHadith()">🕌 حدیث</button>
     </div>
 
-    <div id="content" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3"></div>
+    <div id="content"></div>
   </div>
 
   <script src="script.js"></script>
